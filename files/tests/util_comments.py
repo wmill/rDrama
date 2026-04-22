@@ -1,10 +1,8 @@
 from . import util
 
-from files.__main__ import app, db_session
 from files.classes import Comment
 import json
 import re
-from time import time, sleep
 
 
 def create_comment_for_client(client, post_id, data=None):
@@ -32,7 +30,8 @@ def create_comment_for_client(client, post_id, data=None):
 	assert match != None
 	comment_id = int(match.groups()[0])
 
-	db = db_session()
-	comment = db.query(Comment).filter_by(id=comment_id).first()
-	assert Comment == type(comment)
-	return comment
+	with util.test_db_session() as session:
+		comment = session.query(Comment).filter_by(id=comment_id).first()
+		assert Comment == type(comment)
+		session.expunge(comment)
+		return comment

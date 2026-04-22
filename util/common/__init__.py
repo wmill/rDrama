@@ -1,6 +1,7 @@
 # import pprint
 import subprocess
 import sys
+import time
 
 def _execute(command,**kwargs):
     # print("Running:")
@@ -33,6 +34,9 @@ def _execute(command,**kwargs):
 
         proc.wait()
         if check and proc.returncode != 0:
+            print("Command:")
+            print(command)
+            print(f"Exit code: {proc.returncode}")
             print("STDOUT:")
             print(stdout)
             print("STDERR (not interlaced properly, sorry):")
@@ -61,19 +65,24 @@ def _docker(command, **kwargs):
     ] + command,
     **kwargs)
 
+def _compose(command, **kwargs):
+    return _execute([
+        "docker",
+        "compose",
+    ] + command,
+    **kwargs)
+
 def _start():
     print("Starting containers in operation mode . . .")
     print("  If this takes a while, it's probably building the container.")
     command = [
-        'docker',
-        'compose',
         '-f', 'docker-compose.yml',
         '-f', 'docker-compose-operation.yml',
         'up',
         '--build',
         '-d',
     ]
-    result = _execute(command)
+    result = _compose(command)
 
     # alright this seems sketchy, bear with me
 
@@ -96,42 +105,82 @@ def _start():
     # maybe there's still a race condition? I dunno! Keep an eye on this.
     # If there is a race condition then you're stuck doing something gnarly with `docker compose ps`. Good luck!
 
-    print("  Containers started!")
-
     return result
 
 def _stop():
-    # use "stop" instead of "down" to avoid killing all stored data
-    command = ['docker', 'compose', 'stop']
     print("Stopping containers . . .")
-    result = _execute(command)
+    result = _compose(['stop'])
     return result
 
-def _operation(name, commands):
-    # restart to make sure they're in the right mode
-    _stop()
+def _down(volumes=False):
+    print("Removing containers . . .")
+    command = ['down']
+    if volumes:
+        command.append('-v')
+    result = _compose(command)
+    return result
 
-    _start()
-
-    # prepend our upgrade, since right now we're always using it
-    commands = [[
-        "python3",
-        "-m", "flask",
-        "db", "upgrade"
-    ]] + commands
-
-    # run operations in docker container
-    print(f"Running {name} . . .")
-    for command in commands:
+def _wait_for_site(timeout_seconds=60):
+    print("Waiting for site container readiness . . .")
+    deadline = time.monotonic() + timeout_seconds
+    last_error = None
+    while time.monotonic() < deadline:
         result = _docker(
-            command,
-            on_stdout_line=lambda line: print(line, end=''),
-            on_stderr=lambda line: print(line, end=''),
+            ["python3", "-c", "print('ready')"],
+            check=False,
         )
+        if result.returncode == 0:
+            print("  Containers started!")
+            return
+        last_error = result
+        time.sleep(1)
 
-    _stop()
+    print("Container startup failed. Recent logs:")
+    _compose(
+        ['logs', '--no-color', 'site', 'postgres', 'redis'],
+        check=False,
+        on_stdout_line=lambda line: print(line, end=''),
+    )
+    raise subprocess.CalledProcessError(
+        last_error.returncode if last_error else 1,
+        ["docker", "compose", "exec", "-T", "site", "python3", "-c", "print('ready')"],
+        last_error.stdout if last_error else None,
+        last_error.stderr if last_error else None,
+    )
 
-    return result
+def _operation(name, commands, reset=False):
+    # restart to make sure they're in the right mode
+    if reset:
+        _down(volumes=True)
+    else:
+        _stop()
+
+    try:
+        _start()
+        _wait_for_site()
+
+        # prepend our upgrade, since right now we're always using it
+        commands = [[
+            "python3",
+            "-m", "flask",
+            "db", "upgrade"
+        ]] + commands
+
+        # run operations in docker container
+        print(f"Running {name} . . .")
+        for command in commands:
+            result = _docker(
+                command,
+                on_stdout_line=lambda line: print(line, end=''),
+                on_stderr_line=lambda line: print(line, end=''),
+            )
+
+        return result
+    finally:
+        if reset:
+            _down()
+        else:
+            _stop()
 
 def run_help():
     print("Available commands: (test|migrate|help)")

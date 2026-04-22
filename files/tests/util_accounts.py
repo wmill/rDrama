@@ -1,38 +1,46 @@
+import secrets
+import string
+from itertools import count
+
 from . import util
 
 from files.__main__ import app, db_session
 from files.classes import User
-from functools import lru_cache
-from time import time, sleep
 
 
-@lru_cache(maxsize=None)
+_USERNAME_COUNTER = count()
+
+
+def _to_base36(num: int) -> str:
+	alphabet = string.digits + string.ascii_lowercase
+	result = ""
+	while num > 0:
+		result = alphabet[num % 36] + result
+		num //= 36
+	return result or "0"
+
+
+def _make_unique_suffix() -> str:
+	# Counter avoids same-process collisions; random tail keeps repeated runs readable
+	# without relying on wall-clock time.
+	return f"{_to_base36(next(_USERNAME_COUNTER))}{secrets.token_hex(2)}"
+
+
 def create_test_client_and_user(name="user"):
 	"""Create a test client with a newly registered user account."""
 	client = app.test_client()
-
-	# Convert timestamp to base36 for shorter usernames
-	import string
-	def to_base36(num):
-		alphabet = string.digits + string.ascii_lowercase
-		result = ""
-		while num > 0:
-			result = alphabet[num % 36] + result
-			num //= 36
-		return result or "0"
-
-	timestamp_b36 = to_base36(round(time()))
+	suffix = _make_unique_suffix()
 
 	# Validate name parameter length to ensure username fits within username length limit
 	from files.helpers.config.regex import USERNAME_LENGTH_MAX
-	# Format: t-{name}-{timestamp_b36} (3 chars overhead + timestamp length)
-	max_name_length = USERNAME_LENGTH_MAX - 3 - len(timestamp_b36)  # 3 = len("t-") + len("-")
+	# Format: t-{name}-{suffix} (3 chars overhead + suffix length)
+	max_name_length = USERNAME_LENGTH_MAX - 3 - len(suffix)  # 3 = len("t-") + len("-")
 	if len(name) > max_name_length:
 		raise ValueError(f"name parameter '{name}' is too long ({len(name)} chars). "
 						f"Maximum length is {max_name_length} chars to fit within {USERNAME_LENGTH_MAX} char username limit. "
-						f"Current timestamp part uses {len(timestamp_b36)} chars.")
+						f"Current unique suffix uses {len(suffix)} chars.")
 
-	username = f"t-{name}-{timestamp_b36}"
+	username = f"t-{name}-{suffix}"
 	print(f"Signing up as {username}")
 
 	signup_post_response, signup_get_response = util.post_with_formkey(
@@ -62,7 +70,6 @@ def create_test_client_and_user(name="user"):
 	return client, user
 
 
-@lru_cache(maxsize=None)
 def create_test_client_and_admin(admin_level, name="admin"):
 	"""Create a test client with a newly registered admin user account.
 

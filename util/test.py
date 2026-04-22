@@ -16,7 +16,7 @@ def run_test(args):
             "--cov-report=html",
             "--cov-report=term",
         ] + pytest_args
-    ])
+    ], reset=True)
 
     sys.exit(result.returncode)
 

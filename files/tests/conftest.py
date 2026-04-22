@@ -104,6 +104,7 @@ def rollback_dirty_session():
 	from files.__main__ import db_session
 	if db_session.registry.has():
 		db_session.rollback()
+		db_session.remove()
 
 
 @pytest.fixture(autouse=True)

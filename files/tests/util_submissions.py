@@ -1,8 +1,6 @@
 from . import util
 
-from files.__main__ import app, db_session
 from files.classes import Submission
-from time import time, sleep
 
 
 def create_submission_for_client(client, data=None):
@@ -30,7 +28,8 @@ def create_submission_for_client(client, data=None):
 
 	post_id = int(post_id_full.split('_')[1])
 
-	db = db_session()
-	submission = db.query(Submission).filter_by(id=post_id).first()
-	assert Submission == type(submission)
-	return submission
+	with util.test_db_session() as session:
+		submission = session.query(Submission).filter_by(id=post_id).first()
+		assert Submission == type(submission)
+		session.expunge(submission)
+		return submission
