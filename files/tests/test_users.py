@@ -2,6 +2,7 @@ from . import util_accounts
 from . import util
 from . import util_submissions
 from . import util_comments
+from files.__main__ import db_session
 
 def test_profilecss_endpoint():
 	"""Test the /@<username>/profilecss endpoint"""
@@ -109,6 +110,20 @@ def test_user_info_nonexistent_user():
 
 	response = client.get("/@nonexistentuser/info")
 	assert response.status_code == 404
+
+
+def test_username_canonicalization_redirect_is_relative():
+	"""Test username canonicalization keeps same-site redirects relative."""
+	client, user = util_accounts.create_test_client_and_user("mixedcaseuser")
+
+	user.username = "MixedCaseUser"
+	db_session.add(user)
+	db_session.commit()
+
+	response = client.get("/@mixedcaseuser/?page=2")
+
+	assert response.status_code == 302
+	assert response.location == "/@MixedCaseUser/?page=2"
 
 def test_follow_user():
 	"""Test following another user"""

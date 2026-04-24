@@ -3,6 +3,7 @@ from files.helpers.wrappers import *
 from files.helpers.alerts import *
 from files.helpers.get import *
 from files.helpers.config.const import *
+from files.helpers.redirects import same_site_relative_url
 from files.classes.award import *
 from flask import g, request
 from files.helpers.sanitize import filter_emojis_only
@@ -139,10 +140,11 @@ def award_post(pid, v):
 	g.db.add(author)
 
 	g.db.commit()
-	if request.referrer and len(request.referrer) > 1:
-		if request.referrer == f'{SITE_FULL}/submit': return redirect(post.permalink)
-		elif request.referrer.startswith(f'{SITE_FULL}/'): return redirect(request.referrer)
-	return redirect(SITE_FULL)
+	referrer = same_site_relative_url(request.referrer)
+	if referrer and len(referrer) > 1:
+		if referrer == '/submit': return redirect(post.permalink)
+		return redirect(referrer)
+	return redirect('/')
 
 
 @app.post("/award_comment/<cid>")
@@ -190,9 +192,10 @@ def award_comment(cid, v):
 	g.db.add(author)
 
 	g.db.commit()
-	if request.referrer and len(request.referrer) > 1 and request.referrer.startswith(f'{SITE_FULL}/'):
-		return redirect(request.referrer)
-	return redirect(SITE_FULL)
+	referrer = same_site_relative_url(request.referrer)
+	if referrer and len(referrer) > 1:
+		return redirect(referrer)
+	return redirect('/')
 
 @app.get("/admin/awards")
 @admin_level_required(2)

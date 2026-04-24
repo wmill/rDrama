@@ -56,7 +56,25 @@ def test_login_post_successful_with_redirect():
 
 	# Should redirect to the specified page
 	assert response.status_code == 302
-	assert "/rules" in response.location
+	assert response.location == "/rules"
+
+
+def test_login_post_successful_with_site_full_redirect():
+	"""Test successful login normalizes same-site absolute redirects to relative paths"""
+	from files.helpers.config.environment import SITE_FULL
+
+	client, user = util_accounts.create_test_client_and_user(name="login-test-2b")
+
+	client.get("/logout")
+
+	response = client.post("/login", data={
+		"username": user.username,
+		"password": "password",
+		"redirect": f"{SITE_FULL}/rules"
+	})
+
+	assert response.status_code == 302
+	assert response.location == "/rules"
 
 
 def test_login_post_with_at_prefix():
@@ -218,10 +236,9 @@ def test_signup_with_logged_in_user():
 	client, user = util_accounts.create_test_client_and_user()
 
 	response = client.get("/signup")
-	# Behavior depends on whether signups are enabled:
-	# - If enabled and user is logged in: redirects (302) or shows page (200)
-	# - If disabled: 403
-	assert response.status_code in [200, 302, 403]
+	assert response.status_code in [302, 403]
+	if response.status_code == 302:
+		assert response.location == "/"
 
 
 def test_forgot_password_get():

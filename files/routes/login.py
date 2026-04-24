@@ -1,5 +1,6 @@
 from urllib.parse import urlencode
 from files.helpers.config.environment import HCAPTCHA_SECRET, HCAPTCHA_SITEKEY, WELCOME_MSG
+from files.helpers.redirects import same_site_relative_url
 from files.mail import *
 from files.__main__ import app, limiter
 from files.helpers.config.const import *
@@ -11,11 +12,10 @@ def login_get(v):
 	redir = request.values.get("redirect")
 	if redir:
 		redir = redir.replace("/logged_out", "").strip()
-		if not redir.startswith(f'{SITE_FULL}/') and not redir.startswith('/'): redir = None
+		redir = same_site_relative_url(redir)
 
 	if v and redir:
-		if redir.startswith(f'{SITE_FULL}/'): return redirect(redir)
-		elif redir.startswith('/'): return redirect(f'{SITE_FULL}{redir}')
+		return redirect(redir)
 
 	return render_template("login/login.html", failed=False, redirect=redir)
 
@@ -148,11 +148,10 @@ def login_post():
 	redir = request.values.get("redirect")
 	if redir:
 		redir = redir.replace("/logged_out", "").strip()
-		if not redir.startswith(f'{SITE_FULL}/') and not redir.startswith('/'): redir = '/'
+		redir = same_site_relative_url(redir) or '/'
 
 	if redir:
-		if redir.startswith(f'{SITE_FULL}/'): return redirect(redir)
-		if redir.startswith('/'): return redirect(f'{SITE_FULL}{redir}')
+		return redirect(redir)
 	return redirect('/')
 
 @app.get("/me")
@@ -179,7 +178,7 @@ def sign_up_get(v):
 	if not app.config['SETTINGS']['Signups']:
 		abort(403, "New account registration is currently closed. Please come back later.")
 
-	if v: return redirect(SITE_FULL)
+	if v: return redirect('/')
 
 	agent = request.headers.get("User-Agent")
 	if not agent: abort(403)
@@ -353,7 +352,7 @@ def sign_up_post(v):
 
 	g.db.commit()
 
-	return redirect(SITE_FULL)
+	return redirect('/')
 
 
 @app.get("/forgot")

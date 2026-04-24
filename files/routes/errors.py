@@ -7,7 +7,7 @@ from flask import g, redirect, render_template, request, session
 from files.__main__ import app
 from files.helpers.config.const import (ERROR_MESSAGES,
                                         WERKZEUG_ERROR_DESCRIPTIONS)
-from files.helpers.config.environment import SITE_FULL
+from files.helpers.redirects import same_site_relative_url
 
 
 @app.errorhandler(400)
@@ -51,6 +51,7 @@ def allow_nsfw():
 	session["over_18"] = int(time.time()) + 3600
 	redir = request.values.get("redir")
 	if redir:
-		if redir.startswith(f'{SITE_FULL}/'): return redirect(redir)
-		if redir.startswith('/'): return redirect(f'{SITE_FULL}{redir}')
+		redir = same_site_relative_url(redir)
+		if redir:
+			return redirect(redir)
 	return redirect('/')

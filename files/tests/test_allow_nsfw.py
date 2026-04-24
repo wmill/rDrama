@@ -20,15 +20,13 @@ def test_allow_nsfw_no_redirect():
 
 
 def test_allow_nsfw_with_relative_redirect():
-	"""Test /allow_nsfw with relative path redirect - should be prefixed with SITE_FULL"""
+	"""Test /allow_nsfw with relative path redirect - should stay relative"""
 	client = util_accounts.create_logged_off_client()
 
 	response = client.post("/allow_nsfw", data={"redir": "/some/path"})
 
 	assert response.status_code == 302
-	# Should be prefixed with SITE_FULL (which in tests should be http://localhost)
-	assert response.location.endswith("/some/path")
-	assert response.location.startswith("http")
+	assert response.location == "/some/path"
 
 	# Verify session was set
 	with client.session_transaction() as sess:
@@ -36,7 +34,7 @@ def test_allow_nsfw_with_relative_redirect():
 
 
 def test_allow_nsfw_with_site_full_redirect():
-	"""Test /allow_nsfw with full SITE_FULL URL redirect - should redirect directly"""
+	"""Test /allow_nsfw with full SITE_FULL URL redirect - should normalize to relative"""
 	from files.helpers.config.environment import SITE_FULL
 
 	client = util_accounts.create_logged_off_client()
@@ -45,7 +43,7 @@ def test_allow_nsfw_with_site_full_redirect():
 	response = client.post("/allow_nsfw", data={"redir": redirect_url})
 
 	assert response.status_code == 302
-	assert response.location == redirect_url
+	assert response.location == "/target/page"
 
 	# Verify session was set
 	with client.session_transaction() as sess:

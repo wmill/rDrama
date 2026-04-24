@@ -139,7 +139,7 @@ def test_allow_nsfw_with_full_url_redirect():
 	# POST to /allow_nsfw with full URL redirect
 	response = client.post("/allow_nsfw", data={"redir": f"{SITE_FULL}/rules"})
 	assert response.status_code == 302  # Redirect
-	assert "/rules" in response.location
+	assert response.location == "/rules"
 
 
 def test_allow_nsfw_ignores_external_redirect():

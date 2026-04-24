@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import sys
 import time
@@ -8,6 +9,23 @@ COMPOSE_MAIN = ["-f", "docker-compose.yml"]
 COMPOSE_OPERATION = COMPOSE_MAIN + ["-f", "docker-compose-operation.yml"]
 INFRA_SERVICES = ["postgres", "redis"]
 SITE_SERVICE = "site"
+TEST_DATABASE_NAME = os.environ.get("RDRAMA_TEST_DB", "rdrama_test")
+
+
+def _ensure_safe_db_name(name):
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+        error(f"Unsafe test database name: {name!r}")
+    return name
+
+
+def _docker_test_database_url():
+    db_name = _ensure_safe_db_name(TEST_DATABASE_NAME)
+    return f"postgresql://postgres@postgres:5432/{db_name}"
+
+
+def _host_test_database_url():
+    db_name = _ensure_safe_db_name(TEST_DATABASE_NAME)
+    return f"postgresql://postgres@localhost:5432/{db_name}"
 
 
 def _execute(command, **kwargs):
@@ -122,10 +140,10 @@ def _host_flask(command, **kwargs):
     return _host_execute([_host_python(), "-m", "flask", "--app", "files/cli:app"] + command, **kwargs)
 
 
-def _start_operation_stack():
+def _start_operation_stack(env_updates=None):
     print("Starting containers in operation mode . . .")
     print("  If this takes a while, it's probably building the container.")
-    return _compose(["up", "--build", "-d"], operation_mode=True)
+    return _compose(["up", "--build", "-d"], operation_mode=True, env_updates=env_updates)
 
 
 def _start_infra():
@@ -133,17 +151,22 @@ def _start_infra():
     return _compose(["up", "-d"] + INFRA_SERVICES)
 
 
-def _stop(operation_mode=False):
+def _start_operation_infra():
+    print("Starting Postgres and Redis in operation mode . . .")
+    return _compose(["up", "-d"] + INFRA_SERVICES, operation_mode=True)
+
+
+def _stop(operation_mode=False, **kwargs):
     print("Stopping containers . . .")
-    return _compose(["stop"], operation_mode=operation_mode)
+    return _compose(["stop"], operation_mode=operation_mode, **kwargs)
 
 
-def _down(volumes=False, operation_mode=False):
+def _down(volumes=False, operation_mode=False, **kwargs):
     print("Removing containers . . .")
     command = ["down"]
     if volumes:
         command.append("-v")
-    return _compose(command, operation_mode=operation_mode)
+    return _compose(command, operation_mode=operation_mode, **kwargs)
 
 
 def _wait_for_site(timeout_seconds=60):
@@ -174,7 +197,7 @@ def _wait_for_site(timeout_seconds=60):
     )
 
 
-def _wait_for_infra(timeout_seconds=60):
+def _wait_for_infra(timeout_seconds=60, operation_mode=False):
     print("Waiting for Postgres and Redis readiness . . .")
     deadline = time.monotonic() + timeout_seconds
     pg_result = None
@@ -183,10 +206,12 @@ def _wait_for_infra(timeout_seconds=60):
     while time.monotonic() < deadline:
         pg_result = _compose(
             ["exec", "-T", "postgres", "pg_isready", "-U", "postgres"],
+            operation_mode=operation_mode,
             check=False,
         )
         redis_result = _compose(
             ["exec", "-T", "redis", "redis-cli", "ping"],
+            operation_mode=operation_mode,
             check=False,
         )
         if pg_result.returncode == 0 and redis_result.returncode == 0:
@@ -197,6 +222,7 @@ def _wait_for_infra(timeout_seconds=60):
     print("Infrastructure startup failed. Recent logs:")
     _compose(
         ["logs", "--no-color"] + INFRA_SERVICES,
+        operation_mode=operation_mode,
         check=False,
         on_stdout_line=lambda line: print(line, end=""),
         on_stderr_line=lambda line: print(line, end=""),
@@ -215,24 +241,54 @@ def _reset_infra_services():
     _compose(["rm", "-f", "-s", "-v"] + INFRA_SERVICES, check=False)
 
 
+def _psql(sql, operation_mode=False, database="postgres"):
+    return _compose(
+        ["exec", "-T", "postgres", "psql", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", database, "-c", sql],
+        operation_mode=operation_mode,
+    )
+
+
+def _psql_file(file_path, operation_mode=False, database="postgres"):
+    return _compose(
+        ["exec", "-T", "postgres", "psql", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", database, "-f", file_path],
+        operation_mode=operation_mode,
+    )
+
+
+def _reset_test_database(operation_mode=False):
+    db_name = _ensure_safe_db_name(TEST_DATABASE_NAME)
+    print(f"Resetting test database '{db_name}' . . .")
+    _psql(
+        f"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{db_name}' AND pid <> pg_backend_pid();",
+        operation_mode=operation_mode,
+    )
+    _psql(f"DROP DATABASE IF EXISTS {db_name};", operation_mode=operation_mode)
+    _psql(f"CREATE DATABASE {db_name};", operation_mode=operation_mode)
+    _psql_file("/docker-entrypoint-initdb.d/00-schema.sql", operation_mode=operation_mode, database=db_name)
+    _psql_file("/docker-entrypoint-initdb.d/10-seed-db.sql", operation_mode=operation_mode, database=db_name)
+
+
 def _ensure_host_infra(reset=False):
-    if reset:
-        _reset_infra_services()
     _start_infra()
     _wait_for_infra()
+    if reset:
+        _reset_test_database()
 
 
 def _operation(name, commands, reset=False):
-    if reset:
-        _down(volumes=True, operation_mode=True)
-    else:
-        _stop(operation_mode=True)
+    _stop(operation_mode=True, check=False)
 
     try:
-        _start_operation_stack()
+        test_database_url = _docker_test_database_url()
+        _start_operation_infra()
+        _wait_for_infra(operation_mode=True)
+        if reset:
+            _reset_test_database(operation_mode=True)
+        _start_operation_stack(env_updates={"DATABASE_URL": test_database_url})
         _wait_for_site()
 
         commands = [["python3", "-m", "flask", "db", "upgrade"]] + commands
+        commands = [["env", f"DATABASE_URL={test_database_url}"] + command for command in commands]
 
         print(f"Running {name} . . .")
         for command in commands:
@@ -244,16 +300,14 @@ def _operation(name, commands, reset=False):
 
         return result
     finally:
-        if reset:
-            _down(operation_mode=True)
-        else:
-            _stop(operation_mode=True)
+        _stop(operation_mode=True, check=False)
 
 
 def _host_operation(name, commands, reset=False, bootstrap_db=True):
     _ensure_host_infra(reset=reset)
     test_env = {
         "DBG_LIMITER_DISABLED": "true",
+        "DATABASE_URL": _host_test_database_url(),
     }
 
     if bootstrap_db:

@@ -727,7 +727,8 @@ def u_username_comments(username, v=None):
 	user = get_user(username, v=v, include_blocks=True)
 
 	if username != user.username:
-		return redirect(SITE_FULL + request.full_path.replace(username, user.username)[:-1])
+		path = request.full_path.replace(username, user.username)
+		return redirect(path.removesuffix('?'))
 	u = user
 
 	if u.reserved:
