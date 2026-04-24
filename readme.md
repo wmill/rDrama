@@ -39,9 +39,50 @@ Most code edits will be reflected (almost) immediately. If you make any setup ch
 
 Chat-related code edits will take a minute to update (if it's in Python) or won't be reflected automatically at all (if it's in React). Improvements welcome! But almost nobody touches these systems, so it hasn't been a priority.
 
-# Run the E2E tests:
+# Host dev mode
+
+If you want to run the Flask app or tests on the host for easier debugging, keep
+Postgres and Redis in Docker and run Python locally.
+
+1. Install Python `3.13.x`.
+2. Install Poetry.
+3. Create the host virtualenv and install dependencies:
+
+```sh
+poetry install --with dev
+```
+
+Poetry is configured to use an in-project `.venv`, which keeps host arm
+packages separate from the x86/Linux packages installed inside Docker images.
+Do not copy `.venv` into the container; when dependencies change, reinstall on
+the host and rebuild the Docker image separately.
+
+Start the host app with Docker-backed Postgres and Redis:
+
+```sh
+./util/dev.py
+```
+
+This will:
+- start `postgres` and `redis` in Docker
+- run `flask db upgrade`
+- run `flask cron_setup`
+- start the Flask dev server on `localhost:5000`
+
+Useful host-mode commands:
+
+```sh
+./util/test.py --host
+./util/command_flask.py --host db revision --autogenerate --message="describe schema changes"
+```
+
+# Run the tests:
 
 `./util/test.py`
+
+Run them on the host instead of in the app container:
+
+`./util/test.py --host`
 
 # Database Stuff
 
@@ -72,6 +113,12 @@ As an example, let's say we want to add a column `is_flagged` to the `comments` 
 2. Autogenerate a migration with a descriptive message. To do this, run
 ```sh
 ./util/command_flask.py db revision --autogenerate --message="add is_flagged field to comments"
+```
+
+Or, in host mode:
+
+```sh
+./util/command_flask.py --host db revision --autogenerate --message="add is_flagged field to comments"
 ```
 
 This will create a migration in the `migrations/versions` directory with a name like `migrations/versions/2022_05_23_05_38_40_9c27db0b3918_add_is_flagged_field_to_comments.py` and content like

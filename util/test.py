@@ -1,22 +1,45 @@
 #!/usr/bin/env python3
 
 import sys
-from common import _operation
+from common import _host_operation, _operation
 
 def run_test(args):
-    # Skip the script name (first argument) and pass the rest to pytest
-    pytest_args = args[1:] if len(args) > 1 else []
+    host_mode = False
+    pytest_args = []
+    for arg in args[1:]:
+        if arg == "--host":
+            host_mode = True
+            continue
+        pytest_args.append(arg)
 
-    result = _operation("tests", [
-        [
-            "python3",
-            "-m", "pytest",
-            "-s",
-            "--cov=files",
-            "--cov-report=html",
-            "--cov-report=term",
-        ] + pytest_args
-    ], reset=True)
+    pytest_command = [
+        "pytest",
+        "-s",
+        "--cov=files",
+        "--cov-report=html",
+        "--cov-report=term",
+    ] + pytest_args
+
+    if host_mode:
+        result = _host_operation(
+            "tests",
+            [pytest_command],
+            reset=True,
+        )
+    else:
+        result = _operation(
+            "tests",
+            [[
+                "python3",
+                "-m",
+                "pytest",
+                "-s",
+                "--cov=files",
+                "--cov-report=html",
+                "--cov-report=term",
+            ] + pytest_args],
+            reset=True,
+        )
 
     sys.exit(result.returncode)
 

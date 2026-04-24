@@ -4,6 +4,7 @@ import sys
 from common import error, run_help
 
 from .command_flask import run_command
+from .dev import run_dev
 from .test import run_test
 
 if __name__ == '__main__':
@@ -15,6 +16,8 @@ if __name__ == '__main__':
 
     if name == "test":
         run_test(args)
+    elif name == "dev":
+        run_dev(sys.argv[1:])
     elif name == "command":
         run_command(args)
     elif name == "help":
