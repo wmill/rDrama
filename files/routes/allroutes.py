@@ -13,12 +13,19 @@ from files.__main__ import app, db_session, limiter, is_known_bot, active_reques
 if TYPE_CHECKING:
 	from flask.wrappers import Response
 
+
+def _host_matches_server_name(request_host: str, server_name: str) -> bool:
+	request_name = request_host.split(":", 1)[0]
+	server_name_only = server_name.split(":", 1)[0]
+	return request_host == server_name or request_name == server_name_only
+
+
 @app.before_request
 def before_request():
 	with open('site_settings.json', 'r') as f:
 		app.config['SETTINGS'] = json.load(f)
 
-	if request.host != app.config["SERVER_NAME"]:
+	if not _host_matches_server_name(request.host, app.config["SERVER_NAME"]):
 		return {"error": "Unauthorized host provided."}, 403
 
 	if not app.config['SETTINGS']['Bots'] and request.headers.get("Authorization"):

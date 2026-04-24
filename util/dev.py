@@ -8,7 +8,7 @@ from common import _ensure_host_infra, _host_flask
 def run_dev(argv):
     flask_run_args = argv[1:]
     if not flask_run_args:
-        flask_run_args = ["--debug", "run", "--host=0.0.0.0", "--port=5000"]
+        flask_run_args = ["--debug", "run", "--host=0.0.0.0", "--port=5555"]
 
     _ensure_host_infra(reset=False)
 
